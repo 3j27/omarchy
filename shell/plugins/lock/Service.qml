@@ -101,8 +101,8 @@ Item {
 
   function queueSessionLock() {
     pendingSessionLock = true
-    if (!sessionLockStabilizeTimer.running) logEvent("lock-pending: screen-stabilizing")
-    sessionLockStabilizeTimer.restart()
+    // Local test: request immediately; retain no-real-screen retries.
+    root.requestSessionLock()
     if (!pendingSessionLockTimer.running) pendingSessionLockTimer.start()
   }
 
