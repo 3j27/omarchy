@@ -90,16 +90,31 @@ Item {
     return realScreenCount() > 0
   }
 
+  // Track output changes even while unlocked. A screen can acquire a name or
+  // valid geometry after it first appears in Quickshell.screens.
+  readonly property string screenLayout: {
+    var layout = []
+    var screens = Quickshell.screens || []
+    for (var i = 0; i < screens.length; i++) {
+      var screen = screens[i]
+      if (screen) layout.push([screen.name, screen.x, screen.y, screen.width, screen.height])
+    }
+    return JSON.stringify(layout)
+  }
+
+  onScreenLayoutChanged: sessionLockStabilizeTimer.restart()
+
   function queueSessionLock() {
     pendingSessionLock = true
-    if (!sessionLockStabilizeTimer.running) logEvent("lock-pending: screen-stabilizing")
-    sessionLockStabilizeTimer.restart()
-    if (!pendingSessionLockTimer.running) pendingSessionLockTimer.start()
+    requestSessionLock()
   }
 
   function requestSessionLock() {
     if (!lockRequested || sessionLock.locked || sessionLock.secure) return
-    if (sessionLockStabilizeTimer.running) return
+    if (sessionLockStabilizeTimer.running) {
+      if (lastEvent !== "lock-pending: screen-stabilizing") logEvent("lock-pending: screen-stabilizing")
+      return
+    }
 
     if (!hasRealScreen()) {
       if (!pendingSessionLock || lastEvent !== "lock-pending: no-real-screen") logEvent("lock-pending: no-real-screen")
@@ -239,7 +254,6 @@ Item {
 
     lockRequested = false
     pendingSessionLock = false
-    sessionLockStabilizeTimer.stop()
     pendingSessionLockTimer.stop()
     resetAuthenticationState()
     idleBlankTimer.stop()
@@ -471,7 +485,6 @@ Item {
       root.logEvent("secure=" + secure)
       if (secure) {
         root.pendingSessionLock = false
-        sessionLockStabilizeTimer.stop()
         pendingSessionLockTimer.stop()
         root.startFingerprint()
       }
@@ -482,14 +495,12 @@ Item {
 
       if (locked) {
         root.pendingSessionLock = false
-        sessionLockStabilizeTimer.stop()
         pendingSessionLockTimer.stop()
       }
 
       if (!locked && root.lockRequested) {
         root.lockRequested = false
         root.pendingSessionLock = false
-        sessionLockStabilizeTimer.stop()
         pendingSessionLockTimer.stop()
         root.resetAuthenticationState()
         root.runWake()
@@ -785,6 +796,8 @@ Item {
 
   Timer {
     id: sessionLockStabilizeTimer
+    // The first outputs may still be coming up when the shell starts.
+    running: true
     interval: 500
     repeat: false
     onTriggered: root.requestSessionLock()
@@ -819,6 +832,8 @@ Item {
   Connections {
     target: Quickshell
     function onScreensChanged() {
+      // Arm before recovery can request a lock, regardless of binding order.
+      sessionLockStabilizeTimer.restart()
       var screens = root.realScreenCount()
       if (screens > root.knownScreenCount) {
         root.resumeFingerprint()

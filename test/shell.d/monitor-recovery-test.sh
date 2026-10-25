@@ -141,3 +141,43 @@ grep -F 'id: sessionLockStabilizeTimer' "$lock_service" >/dev/null
 grep -Pzo 'function onScreensChanged\(\) \{\n(.*\n)*?\s*root\.requestSessionLock\(\)\n' "$lock_service" >/dev/null
 grep -F 'realScreens: root.realScreenCount()' "$lock_service" >/dev/null
 pass "lock service waits for stable real screens before session lock"
+
+# Exercise the service's real QML functions, bindings and timers offscreen.
+# Only the screen list and session-lock endpoint are replaced: no test takes
+# a lock or connects to the developer's compositor.
+qml_runner=/usr/lib/qt6/bin/qmltestrunner
+if [[ ! -x $qml_runner ]]; then
+  skip "Qt Quick Test unavailable; skipping lock settling runtime checks"
+  exit 0
+fi
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+cp "$SHELL_TEST_DIR/fixtures/lock-settling/tst_lock.qml" "$work/"
+python3 - "$lock_service" "$work/LockTiming.qml" <<'PYTHON'
+import pathlib, re, sys
+source = pathlib.Path(sys.argv[1]).read_text()
+# Keep the production policy intact, including the layout dependency binding.
+policy = source[source.index("  function realScreenCount() {"):source.index("  // ext-session-lock")]
+policy = policy.replace("Quickshell.screens", "root.testScreens")
+timers = []
+for name in ("sessionLockStabilizeTimer", "pendingSessionLockTimer"):
+    timers.append(re.search(r"^  Timer \{\n    id: " + name + r"\n.*?^  \}", source, re.M | re.S).group())
+pathlib.Path(sys.argv[2]).write_text("""import QtQuick
+Item {
+  id: root
+  property var testScreens: []
+  property bool lockRequested: false
+  property bool pendingSessionLock: false
+  property string lastEvent: ""
+  property alias sessionLocked: sessionLock.locked
+  function logEvent(event) { lastEvent = event }
+  QtObject {
+    id: sessionLock
+    property bool locked: false
+    property bool secure: false
+  }
+""" + policy + "\n".join(timers) + "\n}\n")
+PYTHON
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QPA_PLATFORMTHEME= \
+  timeout 20 "$qml_runner" -input "$work" || fail "lock settling runtime checks"
+pass "stable locks are immediate; startup, hotplug and geometry changes settle before locking"
