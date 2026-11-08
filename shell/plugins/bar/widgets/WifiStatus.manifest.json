@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "omarchy.wifi-status",
+  "name": "Wi-Fi status",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "Wi-Fi signal status that opens the Network panel",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "WifiStatus.qml"
+  },
+  "barWidget": {
+    "displayName": "Wi-Fi status",
+    "description": "Wi-Fi signal status that opens the Network panel",
+    "category": "Network",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}
